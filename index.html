@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="How QA DNA used Claude Code to build and launch Luthien, the open-source proxy that keeps Claude Code under control.">
+<title>QA DNA × Luthien</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: one reading column with a wide "request pipeline" band, the proxy drawn as a checkpoint between two Claudes */
+:root{
+  --bg:#F2F3EF; --surface:#FFFFFF; --ink:#14201B; --muted:#56635D; --line:#D5D9D2;
+  --accent:#0D7A63; --accent-soft:#DDEFE8; --amber:#A95A17; --amber-soft:#F6E7D6;
+  --display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0F1613; --surface:#16201C; --ink:#E6ECE8; --muted:#9AA8A1; --line:#2A3631;
+  --accent:#3FC3A0; --accent-soft:#163A30; --amber:#E39A55; --amber-soft:#3A2817; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F1613; --surface:#16201C; --ink:#E6ECE8; --muted:#9AA8A1; --line:#2A3631;
+  --accent:#3FC3A0; --accent-soft:#163A30; --amber:#E39A55; --amber-soft:#3A2817; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
+a{color:var(--accent);text-underline-offset:3px}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+.wrap{max-width:880px;margin:0 auto}
+.read{max-width:660px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.1;margin:0}
+h1{font-size:clamp(44px,8vw,76px);font-weight:700;letter-spacing:-.01em}
+h2{font-size:clamp(28px,4.4vw,38px);font-weight:600}
+h3{font-size:21px;font-weight:600}
+p{margin:0}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.mono{font-family:var(--mono)}
+
+header.top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding-block:24px;border-bottom:1px solid var(--line)}
+header.top .eyebrow b{color:var(--ink);font-weight:500}
+
+.hero{padding-block:56px 40px;display:grid;gap:24px}
+.hero h1 em{font-style:normal;color:var(--accent)}
+.lede{font-size:20px;line-height:1.55;color:var(--ink);max-width:640px}
+.lede span{color:var(--muted)}
+
+.stats{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.stat{padding:20px 16px 20px 0;display:grid;gap:4px;min-width:0}
+.stat+.stat{padding-left:16px;border-left:1px solid var(--line)}
+.stat .n{font-family:var(--display);font-size:36px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1}
+.stat .l{font-size:14px;color:var(--muted);line-height:1.4}
+@media (max-width:640px){.stats{grid-template-columns:repeat(2,1fr)}.stat:nth-child(3){padding-left:0;border-left:0}.stat:nth-child(n+3){border-top:1px solid var(--line)}}
+
+section{padding-block:56px 0;display:grid;gap:20px}
+section .read{display:grid;gap:16px}
+
+/* pipeline */
+.pipe{margin-top:8px;display:grid;grid-template-columns:1fr auto 1.35fr auto 1fr;align-items:stretch;gap:0;overflow-x:auto}
+.node{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:18px;display:grid;gap:8px;align-content:start;min-width:0}
+.node .eyebrow{font-size:11.5px}
+.node h3{font-size:19px}
+.node p{font-size:14.5px;color:var(--muted);line-height:1.45}
+.node.proxy{border:2px solid var(--accent);background:var(--accent-soft)}
+.node.proxy ul{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-family:var(--mono);font-size:13px}
+.node.proxy li{display:flex;gap:8px;align-items:baseline}
+.node.proxy li::before{content:"";flex:none;width:7px;height:7px;border-radius:50%;background:var(--accent);transform:translateY(-1px)}
+.node.proxy li.rw::before{background:var(--amber)}
+.arrow{display:flex;align-items:center;justify-content:center;width:44px;color:var(--muted);font-family:var(--mono);font-size:20px}
+.claude-tag{display:inline-block;font-family:var(--mono);font-size:11.5px;padding:2px 7px;border-radius:3px;background:var(--amber-soft);color:var(--amber);justify-self:start}
+@media (max-width:720px){.pipe{grid-template-columns:1fr}.arrow{width:auto;height:34px;transform:rotate(90deg)}}
+
+/* twist */
+.twist{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:28px;display:grid;gap:18px}
+.twist blockquote{margin:0;font-family:var(--display);font-size:clamp(22px,3.4vw,28px);font-weight:500;line-height:1.25;text-wrap:balance}
+.trailer{font-family:var(--mono);font-size:13.5px;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:12px 14px;overflow-x:auto;white-space:pre;color:var(--muted)}
+.trailer b{color:var(--ink);font-weight:500}
+.models{display:flex;flex-wrap:wrap;gap:8px}
+.models span{font-family:var(--mono);font-size:13px;border:1px solid var(--line);border-radius:3px;padding:4px 9px}
+
+/* work list */
+.work{display:grid;gap:0;border-top:1px solid var(--line)}
+.area{display:grid;grid-template-columns:220px 1fr;gap:24px;padding-block:24px;border-bottom:1px solid var(--line)}
+.area>div{min-width:0}
+.area h3{font-size:20px}
+.area .why{font-size:14.5px;color:var(--muted);margin-top:6px;line-height:1.45}
+.area ul{margin:0;padding:0;list-style:none;display:grid;gap:9px}
+.area li{display:grid;grid-template-columns:1fr auto;gap:12px;font-size:15.5px;line-height:1.45}
+.area li a{font-family:var(--mono);font-size:13px;white-space:nowrap;text-decoration:none}
+.area li a:hover{text-decoration:underline}
+@media (max-width:640px){.area{grid-template-columns:1fr;gap:12px}}
+
+.gtm{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.gtm>div{border-top:2px solid var(--ink);padding-top:14px;display:grid;gap:6px;align-content:start;min-width:0}
+.gtm p{font-size:15px;color:var(--muted);line-height:1.5}
+@media (max-width:640px){.gtm{grid-template-columns:1fr}}
+
+.links{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.links a{display:grid;gap:2px;padding:16px;border:1px solid var(--line);border-radius:6px;background:var(--surface);text-decoration:none;color:var(--ink);min-width:0}
+.links a:hover{border-color:var(--accent)}
+.links a span{font-family:var(--mono);font-size:13px;color:var(--accent);overflow-wrap:anywhere}
+@media (max-width:640px){.links{grid-template-columns:1fr}}
+
+figure{margin:0;display:grid;gap:10px;min-width:0}
+figure img{display:block;width:100%;height:auto;border-radius:6px;border:1px solid var(--line)}
+figcaption{font-size:14px;color:var(--muted);line-height:1.45}
+.shots{display:grid;grid-template-columns:repeat(2,1fr);gap:24px}
+.shots .wide{grid-column:1/-1}
+@media (max-width:640px){.shots{grid-template-columns:1fr}}
+
+footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);font-size:14px;color:var(--muted);display:grid;gap:8px}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <span class="eyebrow"><b>QA DNA</b> · Production case study</span>
+    <span class="eyebrow">Claude Code · Anthropic API · 2026</span>
+  </header>
+
+  <div class="hero">
+    <span class="eyebrow">Luthien, open-source AI control for Claude Code</span>
+    <h1>Built with Claude, <em>for Claude.</em></h1>
+    <p class="lede">Luthien is a proxy that sits between Claude Code and the Anthropic API and makes sure Claude follows the rules a team sets. QA DNA used Claude Code to build large parts of it, then built the website that takes it to market. <span>Claude wrote the code that keeps Claude in line.</span></p>
+  </div>
+
+  <div class="stats" role="list">
+    <div class="stat" role="listitem"><span class="n">40</span><span class="l">pull requests merged into Luthien by QA DNA</span></div>
+    <div class="stat" role="listitem"><span class="n">40 / 41</span><span class="l">QA DNA commits co-authored by Claude</span></div>
+    <div class="stat" role="listitem"><span class="n">Mar to May</span><span class="l">2026, the period of QA DNA's engineering work</span></div>
+    <div class="stat" role="listitem"><span class="n">5 to 15 ms</span><span class="l">added latency per request, per Luthien</span></div>
+  </div>
+
+  <section>
+    <div class="read">
+      <span class="eyebrow">The production use case</span>
+      <h2>Claude Code is powerful. Sometimes it ignores the rules.</h2>
+      <p>Teams write their conventions into CLAUDE.md: use <span class="mono">uv</span>, not <span class="mono">pip</span>; never touch this folder; ask before deleting. Claude Code usually follows them. Over long sessions and after context compaction, it sometimes doesn't, and a developer ends up correcting the same thing by hand again and again.</p>
+      <p>Luthien turns those rules into something enforced. Every request and response between Claude Code and the Anthropic API passes through the proxy, gets logged, and is checked against the team's policies. A response that breaks a rule is corrected or blocked before it reaches the developer, and a separate Claude model can act as a judge on each response.</p>
+    </div>
+
+    <div class="pipe" aria-label="Request path through Luthien">
+      <div class="node">
+        <span class="eyebrow">Developer's machine</span>
+        <h3>Claude Code</h3>
+        <p>Runs as normal, on the team's own Claude subscription.</p>
+        <span class="claude-tag">Claude</span>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node proxy">
+        <span class="eyebrow">Luthien proxy</span>
+        <h3>Policy checkpoint</h3>
+        <ul>
+          <li>Logs every request and response</li>
+          <li>Checks against CLAUDE.md and team rules</li>
+          <li class="rw">Rewrites or blocks a violation in transit</li>
+          <li>Optional judge model on each response</li>
+        </ul>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node">
+        <span class="eyebrow">Anthropic</span>
+        <h3>Claude API</h3>
+        <p>OAuth pass-through. Luthien never sees an API key and adds no extra charge.</p>
+        <span class="claude-tag">Claude</span>
+      </div>
+    </div>
+
+    <figure>
+      <img src="img/how-it-works.jpg" width="960" height="580" alt="Two Claude Code terminals side by side. Without Luthien, Claude runs pip install despite a CLAUDE.md rule and the developer corrects it twice. With Luthien, the proxy blocks pip install and Claude switches to uv on its own.">
+      <figcaption>The same session with and without Luthien, as shown on luthien.cc. CLAUDE.md says to use uv; Luthien catches the pip install and corrects it.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="twist">
+      <span class="eyebrow">The twist</span>
+      <blockquote>We built a control layer for Claude Code using Claude Code, and tested it by running Claude Code through it.</blockquote>
+      <p>QA DNA's contributions to Luthien were written in pair with Claude. Of the 41 commits QA DNA authored in the Luthien repository, 40 carry a Claude co-author line. Onboarding bugs were found by dogfooding: running Claude Code through the proxy we were building, and fixing what broke.</p>
+      <div class="trailer">fix: onboarding dogfood bugs - streaming protocol, OAuth detection, docker env (#449)
+
+<b>Co-Authored-By: Claude Opus 4.6 &lt;noreply@anthropic.com&gt;</b></div>
+      <div class="models" aria-label="Claude models used">
+        <span>Claude Opus 4.6</span><span>Claude Opus 4.6 (1M context)</span><span>Claude Sonnet 4.6</span><span>Claude Opus 4.7</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="read">
+      <span class="eyebrow">Engineering</span>
+      <h2>What QA DNA shipped into the proxy</h2>
+      <p>The work focused on everything between "this works on the founders' laptops" and "a team can install it and trust it in production". Each item links to the merged pull request.</p>
+    </div>
+
+    <div class="work">
+      <div class="area">
+        <div><h3>Use your own Claude subscription</h3><p class="why">No API key handed to the proxy, no surprise bills.</p></div>
+        <ul>
+          <li>OAuth pass-through as the default path, documented end to end<a href="https://github.com/LuthienResearch/luthien-proxy/pull/468" target="_blank" rel="noopener">#468</a></li>
+          <li>Claude Pro and Max OAuth quickstart<a href="https://github.com/LuthienResearch/luthien-proxy/pull/270" target="_blank" rel="noopener">#270</a></li>
+          <li>Billing mode surfaced to prevent unexpected API charges<a href="https://github.com/LuthienResearch/luthien-proxy/pull/311" target="_blank" rel="noopener">#311</a></li>
+          <li>Billing badge: green when on OAuth, clear warning otherwise<a href="https://github.com/LuthienResearch/luthien-proxy/pull/477" target="_blank" rel="noopener">#477</a></li>
+          <li>Session ID extracted from OAuth metadata<a href="https://github.com/LuthienResearch/luthien-proxy/pull/400" target="_blank" rel="noopener">#400</a></li>
+        </ul>
+      </div>
+      <div class="area">
+        <div><h3>Install in minutes</h3><p class="why">Onboarding that survives real machines and real clouds.</p></div>
+        <ul>
+          <li>One-click Railway deploy with OAuth pass-through and default policies<a href="https://github.com/LuthienResearch/luthien-proxy/pull/497" target="_blank" rel="noopener">#497</a></li>
+          <li>Onboarding fixes from dogfooding and QA feedback<a href="https://github.com/LuthienResearch/luthien-proxy/pull/490" target="_blank" rel="noopener">#490</a></li>
+          <li>Local Docker build fallback when the image pull fails<a href="https://github.com/LuthienResearch/luthien-proxy/pull/455" target="_blank" rel="noopener">#455</a></li>
+          <li>Gateway memory cut to fit a 1 GB Docker limit<a href="https://github.com/LuthienResearch/luthien-proxy/pull/453" target="_blank" rel="noopener">#453</a></li>
+          <li>Safe defaults for fresh cloud deploys, all missing settings reported at once<a href="https://github.com/LuthienResearch/luthien-proxy/pull/450" target="_blank" rel="noopener">#450</a></li>
+        </ul>
+      </div>
+      <div class="area">
+        <div><h3>Streaming you can trust</h3><p class="why">Claude Code streams everything, so the proxy has to stream correctly too.</p></div>
+        <ul>
+          <li>Streaming protocol compliance validator<a href="https://github.com/LuthienResearch/luthien-proxy/pull/426" target="_blank" rel="noopener">#426</a></li>
+          <li>Error event on an empty stream instead of a silent HTTP 200<a href="https://github.com/LuthienResearch/luthien-proxy/pull/451" target="_blank" rel="noopener">#451</a></li>
+          <li>Conversation history recorded for Anthropic streaming responses<a href="https://github.com/LuthienResearch/luthien-proxy/pull/268" target="_blank" rel="noopener">#268</a></li>
+          <li>anthropic-beta header forwarded, SDK kept current<a href="https://github.com/LuthienResearch/luthien-proxy/pull/269" target="_blank" rel="noopener">#269</a></li>
+          <li>Chunk buffering so text rewrites work mid-stream<a href="https://github.com/LuthienResearch/luthien-proxy/pull/396" target="_blank" rel="noopener">#396</a></li>
+        </ul>
+      </div>
+      <div class="area">
+        <div><h3>Policies and control</h3><p class="why">The part that actually keeps Claude Code in line.</p></div>
+        <ul>
+          <li><span><span class="mono">luthien policy</span> command in the CLI</span><a href="https://github.com/LuthienResearch/luthien-proxy/pull/479" target="_blank" rel="noopener">#479</a></li>
+          <li>Safety judge fixed for parallel MCP tool calls<a href="https://github.com/LuthienResearch/luthien-proxy/pull/356" target="_blank" rel="noopener">#356</a></li>
+          <li>Parallel and serial policy chains: crash and ordering fixes<a href="https://github.com/LuthienResearch/luthien-proxy/pull/305" target="_blank" rel="noopener">#305</a></li>
+          <li>Backend timeouts and safe handling when a policy errors<a href="https://github.com/LuthienResearch/luthien-proxy/pull/310" target="_blank" rel="noopener">#310</a></li>
+          <li>Policy configuration UI improvements<a href="https://github.com/LuthienResearch/luthien-proxy/pull/272" target="_blank" rel="noopener">#272</a></li>
+        </ul>
+      </div>
+      <div class="area">
+        <div><h3>Testing</h3><p class="why">Our home ground as a QA company.</p></div>
+        <ul>
+          <li>Mock end-to-end testing framework<a href="https://github.com/LuthienResearch/luthien-proxy/pull/307" target="_blank" rel="noopener">#307</a></li>
+          <li>Shellcheck added to dev checks, all warnings fixed<a href="https://github.com/LuthienResearch/luthien-proxy/pull/332" target="_blank" rel="noopener">#332</a></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="read">
+      <span class="eyebrow">Go to market</span>
+      <h2>Then we took it to market</h2>
+      <p>QA DNA's in-house GTM and marketing team produced most of Luthien's public presence.</p>
+    </div>
+    <div class="gtm">
+      <div><h3>Website</h3><p>Designed and built luthien.cc, including the request pipeline explainer and the beta sign-up path.</p></div>
+      <div><h3>Copy</h3><p>Product positioning and site copy, written for developers who already use Claude Code every day.</p></div>
+      <div><h3>Blog</h3><p>Content work on the Luthien blog alongside the founders.</p></div>
+    </div>
+
+    <div class="shots">
+      <figure class="wide">
+        <img src="img/hero.jpg" width="1440" height="640" alt="luthien.cc homepage hero: Claude Code builds. You stay in control. With the install command and buttons for GitHub and Apply for beta." loading="lazy">
+        <figcaption>Homepage: the positioning in one line, with install and beta sign-up right below it.</figcaption>
+      </figure>
+      <figure>
+        <img src="img/problem.jpg" width="960" height="570" alt="Problem section of luthien.cc with filter chips and cards collecting real Claude Code incidents from GitHub and social media." loading="lazy">
+        <figcaption>The problem section collects real Claude Code incidents, filterable by type.</figcaption>
+      </figure>
+      <figure>
+        <img src="img/architecture.jpg" width="960" height="625" alt="Architecture section of luthien.cc showing the request pipeline: You, Claude Code, Luthien, Anthropic API, with the checks Luthien runs." loading="lazy">
+        <figcaption>Architecture explained as a terminal diagram, in the language of the people who use it.</figcaption>
+      </figure>
+      <figure class="wide">
+        <img src="img/feedback-get-started.jpg" width="960" height="900" alt="Early feedback quote from a beta user followed by three get started steps: install, configure rules, let Claude build." loading="lazy">
+        <figcaption>Early beta feedback and a three-step get started flow.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <div class="read">
+      <span class="eyebrow">See it yourself</span>
+      <h2>Everything here is public</h2>
+    </div>
+    <div class="links">
+      <a href="https://luthien.cc/" target="_blank" rel="noopener">Luthien website<span>luthien.cc</span></a>
+      <a href="https://github.com/LuthienResearch/luthien-proxy" target="_blank" rel="noopener">Source code (Apache-2.0)<span>github.com/LuthienResearch/luthien-proxy</span></a>
+      <a href="https://github.com/LuthienResearch/luthien-proxy/pulls?q=is%3Apr+author%3APeterStoica+is%3Amerged" target="_blank" rel="noopener">QA DNA's merged pull requests<span>github.com/LuthienResearch/…author:PeterStoica</span></a>
+      <a href="https://qadna.co/" target="_blank" rel="noopener">QA DNA<span>qadna.co</span></a>
+    </div>
+  </section>
+
+  <footer>
+    <p>Luthien was founded by Jai Dhyani and Scott Wofford, who designed the core proxy architecture. QA DNA engineering by Peter Rares Stoica, Founder &amp; Lead Engineer.</p>
+    <p>Figures taken from the public GitHub history of LuthienResearch/luthien-proxy, October 2026.</p>
+  </footer>
+</div>
+</body>
+</html>
